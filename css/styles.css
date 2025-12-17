@@ -326,6 +326,70 @@ header {
   position: relative;
 }
 
+.category-label-with-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Category提示样式 */
+.category-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.category-hint svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.6;
+}
+
+.category-hint .hint-text {
+  font-weight: 500;
+  white-space: nowrap;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 首次访问时显示提示 */
+.category-hint.show-hint {
+  opacity: 1;
+  transform: translateY(0);
+  animation: gentlePulse 2s ease-in-out infinite;
+}
+
+/* 淡出动画 */
+.category-hint.fade-hint {
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: all 0.5s ease;
+}
+
+/* 鼠标悬停在Category标签区域时显示提示 */
+.category-label-with-hint:hover .category-hint {
+  opacity: 0.7;
+  transform: translateY(0);
+}
+
+/* 温和的脉动动画 */
+@keyframes gentlePulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 .category-nav-label, .filter-nav-label {
   font-weight: 600;
   background: var(--gradient-primary);
@@ -496,6 +560,46 @@ header {
   background: var(--gradient-primary);
   color: white;
   box-shadow: var(--shadow-sm);
+}
+
+/* 类别筛选状态（左键选中） */
+.category-button.included {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+  border: 2px solid rgba(102, 126, 234, 0.5);
+}
+
+.category-button.included .category-count {
+  background-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+/* 类别排除状态（右键选中） */
+.category-button.excluded {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+  border: 2px solid rgba(239, 68, 68, 0.5);
+  position: relative;
+}
+
+.category-button.excluded .category-count {
+  background-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+/* 为排除的按钮添加删除线效果 */
+.category-button.excluded::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 2px;
+  background-color: rgba(255, 255, 255, 0.8);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 /* 作者按钮样式 */
@@ -1673,8 +1777,6 @@ footer {
   margin-left: 4px;
   letter-spacing: 0;
   text-transform: none;
-}
-
   padding-left: 3px; /* 减少左侧内边距 */
 }
 

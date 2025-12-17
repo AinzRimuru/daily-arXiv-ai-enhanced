@@ -2,6 +2,8 @@ let currentDate = '';
 let availableDates = [];
 let currentView = 'grid'; // 'grid' 或 'list'
 let currentCategory = 'all';
+let includedCategories = []; // 左键选中的类别（筛选）
+let excludedCategories = []; // 右键选中的类别（排除）
 let paperData = {};
 let flatpickrInstance = null;
 let isRangeMode = false;
@@ -207,6 +209,68 @@ function toggleAuthorFilter(author) {
   renderPapers();
 }
 
+// 加载保存的类别选择
+function loadCategorySelections() {
+  try {
+    const savedIncluded = localStorage.getItem('includedCategories');
+    const savedExcluded = localStorage.getItem('excludedCategories');
+    
+    if (savedIncluded) {
+      includedCategories = JSON.parse(savedIncluded);
+    }
+    
+    if (savedExcluded) {
+      excludedCategories = JSON.parse(savedExcluded);
+    }
+  } catch (error) {
+    console.error('加载类别选择失败:', error);
+    includedCategories = [];
+    excludedCategories = [];
+  }
+}
+
+// 保存类别选择
+function saveCategorySelections() {
+  try {
+    localStorage.setItem('includedCategories', JSON.stringify(includedCategories));
+    localStorage.setItem('excludedCategories', JSON.stringify(excludedCategories));
+  } catch (error) {
+    console.error('保存类别选择失败:', error);
+  }
+}
+
+// 显示首次访问提示
+function showFirstTimeHint() {
+  const hasSeenHint = localStorage.getItem('hasSeenCategoryHint');
+  const hintElement = document.getElementById('categoryHint');
+  
+  if (!hasSeenHint && hintElement) {
+    // 首次访问，显示提示并添加动画
+    hintElement.classList.add('show-hint');
+    
+    // 5秒后自动淡出
+    setTimeout(() => {
+      hintElement.classList.remove('show-hint');
+      hintElement.classList.add('fade-hint');
+      
+      // 动画结束后标记已看过
+      setTimeout(() => {
+        localStorage.setItem('hasSeenCategoryHint', 'true');
+      }, 500);
+    }, 5000);
+    
+    // 用户点击任何类别按钮后也隐藏提示
+    document.addEventListener('click', function hideOnInteraction(e) {
+      if (e.target.closest('.category-button')) {
+        hintElement.classList.remove('show-hint');
+        hintElement.classList.add('fade-hint');
+        localStorage.setItem('hasSeenCategoryHint', 'true');
+        document.removeEventListener('click', hideOnInteraction);
+      }
+    }, { once: false });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
   
@@ -218,11 +282,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // 加载用户作者
   loadUserAuthors();
   
+  // 加载保存的类别选择
+  loadCategorySelections();
+  
   fetchAvailableDates().then(() => {
     if (availableDates.length > 0) {
       loadPapersByDate(availableDates[0]);
     }
   });
+  
+  // 显示首次访问提示（延迟显示，等待界面渲染完成）
+  setTimeout(showFirstTimeHint, 1000);
 });
 
 async function fetchGitHubStats() {
@@ -496,6 +566,15 @@ function initEventListeners() {
 
     // 点击其他地方不隐藏输入框（需求4），因此不添加blur隐藏逻辑
   }
+  
+  // 类别过滤模式切换按钮事件监听
+  const modeButtons = document.querySelectorAll('.mode-button');
+  modeButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.mode;
+      setCategoryFilterMode(mode);
+    });
+  });
 }
 
 // Function to detect preferred language based on browser settings
@@ -776,34 +855,152 @@ function renderCategoryFilter(categories) {
     totalPapers += count;
   });
   
-  container.innerHTML = `
-    <button class="category-button ${currentCategory === 'all' ? 'active' : ''}" data-category="all">All<span class="category-count">${totalPapers}</span></button>
-  `;
+  // 清空容器
+  container.innerHTML = '';
   
+  // 添加All按钮
+  const allButton = document.createElement('button');
+  allButton.className = `category-button ${currentCategory === 'all' && includedCategories.length === 0 && excludedCategories.length === 0 ? 'active' : ''}`;
+  allButton.innerHTML = `All<span class="category-count">${totalPapers}</span>`;
+  allButton.dataset.category = 'all';
+  
+  allButton.addEventListener('click', (e) => {
+    e.preventDefault();
+    // 清空所有筛选和排除
+    includedCategories = [];
+    excludedCategories = [];
+    currentCategory = 'all';
+    // 保存清空后的状态
+    saveCategorySelections();
+    const categories = getAllCategories(paperData);
+    renderCategoryFilter(categories);
+    renderPapers();
+  });
+  
+  // 阻止右键菜单
+  allButton.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
+  
+  container.appendChild(allButton);
+  
+  // 添加其他类别按钮
   sortedCategories.forEach(category => {
     const count = categoryCounts[category];
     const button = document.createElement('button');
-    button.className = `category-button ${category === currentCategory ? 'active' : ''}`;
+    
+    // 根据状态设置样式
+    const isIncluded = includedCategories.includes(category);
+    const isExcluded = excludedCategories.includes(category);
+    const isCurrentInShowAll = currentCategory === category && includedCategories.length === 0 && excludedCategories.length === 0;
+    
+    let className = 'category-button';
+    if (isIncluded) {
+      className += ' included';
+    } else if (isExcluded) {
+      className += ' excluded';
+    } else if (isCurrentInShowAll) {
+      className += ' active';
+    }
+    
+    button.className = className;
     button.innerHTML = `${category}<span class="category-count">${count}</span>`;
     button.dataset.category = category;
-    button.addEventListener('click', () => {
-      filterByCategory(category);
+    
+    // 根据当前状态设置提示文字
+    if (isIncluded) {
+      button.title = `${category} (已筛选)\n左键：取消筛选 | 右键：改为排除`;
+    } else if (isExcluded) {
+      button.title = `${category} (已排除)\n左键：改为筛选 | 右键：取消排除`;
+    } else {
+      button.title = `${category}\n左键：仅显示此类别 | 右键：排除此类别`;
+    }
+    
+    // 左键点击：筛选（include）
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleCategoryInclude(category);
+    });
+    
+    // 右键点击：排除（exclude）
+    button.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      toggleCategoryExclude(category);
     });
     
     container.appendChild(button);
   });
-  
-  document.querySelector('.category-button[data-category="all"]').addEventListener('click', () => {
-    filterByCategory('all');
-  });
 }
 
+// 切换类别筛选（左键）
+function toggleCategoryInclude(category) {
+  const index = includedCategories.indexOf(category);
+  
+  if (index === -1) {
+    // 添加到筛选列表
+    includedCategories.push(category);
+    // 从排除列表中移除（如果存在）
+    const excludeIndex = excludedCategories.indexOf(category);
+    if (excludeIndex !== -1) {
+      excludedCategories.splice(excludeIndex, 1);
+    }
+  } else {
+    // 从筛选列表中移除
+    includedCategories.splice(index, 1);
+  }
+  
+  // 保存到localStorage
+  saveCategorySelections();
+  
+  // 重置 currentCategory
+  currentCategory = 'all';
+  
+  // 重新渲染
+  const categories = getAllCategories(paperData);
+  renderCategoryFilter(categories);
+  renderPapers();
+}
+
+// 切换类别排除（右键）
+function toggleCategoryExclude(category) {
+  const index = excludedCategories.indexOf(category);
+  
+  if (index === -1) {
+    // 添加到排除列表
+    excludedCategories.push(category);
+    // 从筛选列表中移除（如果存在）
+    const includeIndex = includedCategories.indexOf(category);
+    if (includeIndex !== -1) {
+      includedCategories.splice(includeIndex, 1);
+    }
+  } else {
+    // 从排除列表中移除
+    excludedCategories.splice(index, 1);
+  }
+  
+  // 保存到localStorage
+  saveCategorySelections();
+  
+  // 重置 currentCategory
+  currentCategory = 'all';
+  
+  // 重新渲染
+  const categories = getAllCategories(paperData);
+  renderCategoryFilter(categories);
+  renderPapers();
+}
+
+// 删除旧的setCategoryFilterMode和toggleCategorySelection函数
 function filterByCategory(category) {
   currentCategory = category;
+  includedCategories = [];
+  excludedCategories = [];
   
-  document.querySelectorAll('.category-button').forEach(button => {
-    button.classList.toggle('active', button.dataset.category === category);
-  });
+  // 保存清空后的状态
+  saveCategorySelections();
+  
+  const categories = getAllCategories(paperData);
+  renderCategoryFilter(categories);
   
   // 保持当前激活的过滤标签
   renderFilterTags();
@@ -843,15 +1040,68 @@ function renderPapers() {
   container.className = `paper-container ${currentView === 'list' ? 'list-view' : ''}`;
   
   let papers = [];
-  if (currentCategory === 'all') {
+  
+  // 根据筛选和排除条件获取论文
+  if (includedCategories.length === 0 && excludedCategories.length === 0) {
+    // 没有筛选也没有排除，使用原来的逻辑
+    if (currentCategory === 'all') {
+      const { sortedCategories } = getAllCategories(paperData);
+      sortedCategories.forEach(category => {
+        if (paperData[category]) {
+          papers = papers.concat(paperData[category]);
+        }
+      });
+    } else if (paperData[currentCategory]) {
+      papers = paperData[currentCategory];
+    }
+  } else if (includedCategories.length > 0) {
+    // 有筛选条件：只显示包含选中类别的论文
     const { sortedCategories } = getAllCategories(paperData);
+    const allPapers = [];
+    const paperIds = new Set(); // 用于去重
+    
     sortedCategories.forEach(category => {
       if (paperData[category]) {
-        papers = papers.concat(paperData[category]);
+        paperData[category].forEach(paper => {
+          // 检查论文是否包含任何选中的类别
+          const paperCategories = Array.isArray(paper.category) ? paper.category : [paper.category];
+          const hasIncludedCategory = includedCategories.some(includedCat => 
+            paperCategories.includes(includedCat)
+          );
+          
+          // 去重并添加
+          if (hasIncludedCategory && !paperIds.has(paper.id)) {
+            paperIds.add(paper.id);
+            allPapers.push(paper);
+          }
+        });
       }
     });
-  } else if (paperData[currentCategory]) {
-    papers = paperData[currentCategory];
+    papers = allPapers;
+  } else if (excludedCategories.length > 0) {
+    // 有排除条件：排除包含选中类别的论文
+    const { sortedCategories } = getAllCategories(paperData);
+    const allPapers = [];
+    const paperIds = new Set(); // 用于去重
+    
+    sortedCategories.forEach(category => {
+      if (paperData[category]) {
+        paperData[category].forEach(paper => {
+          // 检查论文是否包含任何被排除的类别
+          const paperCategories = Array.isArray(paper.category) ? paper.category : [paper.category];
+          const hasExcludedCategory = excludedCategories.some(excludedCat => 
+            paperCategories.includes(excludedCat)
+          );
+          
+          // 去重并添加（不包含被排除类别的论文）
+          if (!hasExcludedCategory && !paperIds.has(paper.id)) {
+            paperIds.add(paper.id);
+            allPapers.push(paper);
+          }
+        });
+      }
+    });
+    papers = allPapers;
   }
   
   // 创建匹配论文的集合
